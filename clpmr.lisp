@@ -445,7 +445,7 @@ file NAME.  Care is taken to lock the file before opening it."
     (format out "~&An error occurred during the processing of a mail message on ~A.~%  ~A~%"
 	    (time-rfc822-string) condition)
     #+cmu (debug:backtrace *max-stack-trace* out)
-    #+sbcl (sb-debug:backtrace *max-stack-trace* out)
+    #+sbcl (sb-debug:print-backtrace :count *max-stack-trace* :stream out)
     (format out "~2&Message has been saved in the default mailbox.~%"))
   #+sbcl(sb-ext:quit :recklessly-p t :unix-status 42)
   #+cmu (ext:quit t))
