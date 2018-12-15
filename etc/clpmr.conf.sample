@@ -1,0 +1,193 @@
+;;; -*- Common-Lisp -*-
+
+;;;
+;;; Sample configuration file for CLPMR (~/.clpmr.conf) .  It shows
+;;; some of the most useful features including: interaction with
+;;; external programs (a Bayesian spam filter), a document server, and
+;;; handling of mailing lists' traffic.  As you can see, inside this
+;;; file you still have the full power of Lisp and access to the
+;;; complete language features.
+;;;
+;;; Do not install this file as it is!
+;;;
+
+
+(in-package :clpmr)	       ; this is the default so it's redundant
+
+;; You may want to reduce *REGEX-CHAR-CODE-LIMIT* to 256 if you don't
+;; care about parsing anything but ASCII and latin languages.
+#+(OR)
+(eval-when (:load-toplevel)
+  (setf cl-ppcre:*regex-char-code-limit* 256))
+
+(defgeneric find-MS-attachment (part)
+  (:documentation
+   "Return true if the MIME PART is some Micro$oft rubbish."))
+
+(defmethod find-MS-attachment ((part mime-part))
+  nil)
+
+(defmethod find-MS-attachment ((part mime-multipart))
+  (some #'find-MS-attachment (mime-body part)))
+
+(defmethod find-MS-attachment ((part mime-application))
+  (when (or (ppcre:scan "^(:vnd\\.ms|x-ms|ms)" (mime4cl:mime-subtype part))
+	    (ppcre:scan "\\.(:pps|xls|doc|exe|com)$" (mime-part-file-name part)))
+    part))
+
+(defmethod find-MS-attachment ((part mime-video))
+  (when (ppcre:scan "^(:x-ms|ms)" (mime4cl:mime-subtype part))
+    part))
+
+(defun bin-it ()
+  (save :file "junk")
+  (stop))
+
+(defun ignore-it ()
+  (stop))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; External filters can be used as well.  BMF is a Bayesian filter.
+
+(defun spam? ()
+  (or (h~ :x-spam-flag "^yes")
+      (h~ :x-spam-status "^yes")
+      (zerop (forward-to-program "/usr/local/bin/bmf"))))
+
+(defun rank-as-spam ()
+  (forward-to-program "/usr/local/bin/bmf -S"))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Filtering of unwanted material
+
+(defun bad-attachment (what)
+  (answer (format nil "
+THIS IS AN AUTOMATICALLY GENERATED MESSAGE.
+
+Your message ~A addressed to
+
+  ~A
+
+happened to contain a~A.
+As such it has been deleted and not put forward to any further
+processing or delivery.  I am sorry for the inconvenience this might
+have caused.  To avoid incurring again in this problem please avoid
+using proprietary attachments.
+
+This filtering service has been set up in the effort to cut down
+on diffusion of potentially dangerous contents (viruses), waste
+of bandwidth, and the attempt to enforce an ethical use of the
+Internet.
+
+If you believe this action has been taken by mistake, please
+contact the administrator of this domain and report the problem.
+DO NOT try to resend the original message as this will not sort
+any effect." #?message-id #?to what))
+  (bin-it))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule-set
+
+  ;; ~/Mail/inlaws is a hand-edited list of people I don't want to
+  ;; hear from.  It should be one of the first rules to avoid
+  ;; interfering with the Bayesian filter.
+  (when (blacklisted-p #?from "inlaws")
+    (bin-it))
+
+  ;; We can also bounce messages if we know the originator is a
+  ;; person.  He might want to give up on us one day.
+  (when (h~ :from "salesman@some.com")
+    (bounce))
+
+  ;;
+  ;; Spam related rules
+  ;;
+
+  ;; if it's a bounce of a message to complain for spam, ignore it
+  (when (h~ :x-uce-spam-reported-by "myname@mydomain\\.org")
+    (ignore-it))
+
+  ;; The address <blacklistme@mydomain.org> is a bait published on my
+  ;; web page for address harvesters.  If something is sent to that
+  ;; address, simply blacklist the originator and discard the message.
+  (when (h~ :to "blacklistme@mydomain\\.org")
+    (blacklist "spammers")
+    (rank-as-spam)
+    (stop))
+
+  (when (spam?)
+    (rank-as-spam)
+    (save :file "spam")
+    (stop))
+
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  ;; Mailing lists.  They are all saved into a file which will be read
+  ;; with GNUS.
+
+  (when (h~ :sender "owner-lisp-hug@(:harlequin\\.co\\.uk|xanalys\\.com|lispworks\\.com)")
+    (save :file "lisp-hug")
+    (stop))
+
+  (when (h~ :sender "slime-devel-bounces@common-lisp\\.net")
+    (save :file "slime")
+    (stop))
+  
+  (when (h~ :sender "elephant-devel-bounces@common-lisp\\.net")
+    (save :file "elephant")
+    (stop))
+
+  (when (h~ :mailing-list "m0n0wall-.*@lists\\.m0n0\\.ch")
+    (save :file "m0n0wall")
+    (stop))
+
+  (when (or (h~ :sender "clsql-help-bounces@b9\\.com")
+	    (h~ :sender "clsql-devel-bounces@b9\\.com"))
+    (save :file "clsql")
+    (stop))
+
+  ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  ;; forward My Friend's messages
+  (when (h~ :to "myfriend@mydomain\\.org")
+    (save)
+    (forward "myfirend@another-host" "my.friend@huge-corp.com"))
+
+  ;;
+  ;; Majordomo-style document server
+  ;;
+
+  (when (h~ :to "fetch@mydomain\\.org")
+    (let* ((doc #?subject)
+	   (file (make-pathname :defaults #P"/home/wcp/doc/pub/"
+				:name doc)))
+      (if (probe-file file)
+	  (answer (format nil "
+THIS IS AN AUTOMATICALLY GENERATED MESSAGE.
+
+Herewith enclosed is a copy of the document you requested at
+~A.
+
+This should be considered as confidential material.  No part of
+this document can be disclosed, reproduced, stored in a retrieval
+system, or transmitted, in any form or by any means, electronic,
+mechanical, photocopying, recording, or otherwise, without the
+prior written permission of the author.
+" #?to) :attachments (list file))
+	  (answer (format nil "
+Sorry, the document you have requested at ~a is not available.
+
+THIS MESSAGE IS FROM A PROGRAM.  Don not bother to answer it." #?to))))
+    (save :file "doc-requests")
+    (stop))
+
+  ;; Be socially committed and scare the MS-brainwashed.  Forge a
+  ;; notification of virus detection in the rubbish we received, so
+  ;; that he'll spend the rest of the day sweeping up and down his
+  ;; stupid Windoze system looking for viruses.
+  (awhen (find-MS-attachment mime)
+    (bad-attachment (format nil "n attachment (~@[~A ~]~A) infected by a virus"
+			    (mime-part-file-name it)
+			    (mime-type-string it)))))

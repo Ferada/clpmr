@@ -1,0 +1,7 @@
+CLPMR is a replacement for procmail written in Common Lisp, for those
+sick and tired of half-backed, semi-powerful, partially-engineered,
+almost-flexible tools with a paleolithic syntax made to be easy for
+the CPU rather than for the user.
+
+In practice CLPMR provides the full power/semplicity of Lisp to write
+mail delivery filters that are fast and maintainable.

@@ -1,0 +1,10 @@
+@cwd /usr/local
+@owner root
+@group wheel
+@mode 755
+bin/clpmr
+bin/clpmr.server
+bin/clpmr.locker
+@mode 644
+etc/clpmr.conf.sample
+@pkgdep cmucl-19a

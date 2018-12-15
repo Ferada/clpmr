@@ -1,0 +1,67 @@
+To install from sources you need several additional modules:
+
+   sclf
+   net4cl
+   mime4cl
+   smtp4cl
+   cl-ppcre (http://www.weitz.de/cl-ppcre/)
+
+Once all the dependencies have been installed in the usual way do:
+
+   $ make
+   $ su
+   # make install
+
+Once installed you need to write your ~/.clpmr.conf and edit your
+~/.forward file.  There is a sample configuration in
+/usr/local/etc/clpmr.conf.sample.  The .forward file should contain
+this line and nothing else:
+
+   "| /usr/local/bin/clpmr"
+
+At this point send yourself a test message to check CLPMR doesn't
+throw away your mail:
+
+   date | Mail -s test $USER
+
+The program keeps a compiled version of your configuration file to
+speed up the start up procedure.  It is automaticlly updated every
+time you modify .clpmr.conf.  You should should expect seeing
+something like a .clpmr.x86f in your home directory.
+
+----------------------------------------------------------------------
+
+The architecture of this program is split in two parts.  A client that
+is called as final stage of the delivery process (as per ~/.forward
+file) and a Common Lisp server which is responsible for the actual
+processing of the messages.
+
+The client is a very small C program that simply connects to a server
+socket to forward the mail message for processing and delivery.  If
+the server is not running it's the client's responsibility to start
+it.
+
+The server, upon start up opens a Unix domain socket from which to
+serve the client connections.  The sessions are very simple: each
+client connects to forward one single mail message and then it closes
+the connection.  No protocol is involved in this transmission.  After
+some time of inactivity (no more connecting clients) the server exits,
+freeing up precious memory.
+
+This simple architecture has a number of advantages:
+
+ - the client starts instantaneously
+
+ - the server is started only once for each "burst" of e-mail
+   messages, limiting the cost of starting a Common Lisp image to only
+   the first message of the batch
+
+ - only one instance of the Lisp run-time system is run at every moment
+   (for each user)
+
+
+CLPMR has been tested on CMUCL, although care has been taken to keep
+compatibility with other Lisp systems.
+
+Thanks to Aurelio Bignoli for his help in debugging CLPMR under CLISP
+and Linux.
